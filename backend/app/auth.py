@@ -111,15 +111,17 @@ async def get_current_user(
         db.commit()
     except IntegrityError:
         db.rollback()
-        user = db.query(User).filter(User.id == user_id).first()
-        if user is None and email:
-            user = db.query(User).filter(User.email == email).first()
-        if user is None:
+        fallback_user = db.query(User).filter(User.id == user_id).first()
+        if fallback_user is None and email:
+            fallback_user = db.query(User).filter(User.email == email).first()
+        if fallback_user is None:
             raise
-        user.email = email or user.email
-        user.name = name or user.name
-        user.avatar_url = avatar_url or user.avatar_url
+
+        fallback_user.email = email or fallback_user.email
+        fallback_user.name = name or fallback_user.name
+        fallback_user.avatar_url = avatar_url or fallback_user.avatar_url
         db.commit()
+        user = fallback_user
 
     db.refresh(user)
     return user
