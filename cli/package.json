@@ -1,0 +1,15 @@
+{
+  "name": "envshare",
+  "version": "1.0.0",
+  "description": "CLI for EnvShare secure env sharing",
+  "bin": {
+    "envshare": "bin/envshare.js"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}
