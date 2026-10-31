@@ -8,6 +8,13 @@ import { apiFetch } from "../../../lib/api";
 import { supabase } from "../../../lib/supabase";
 import { useTeamKeyStore } from "../../../store/teamKeyStore";
 
+type CurrentUser = {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url?: string | null;
+};
+
 type Team = {
   id: string;
   name: string;
@@ -41,6 +48,18 @@ type AuditEntry = {
   created_at: string;
 };
 
+type JoinRequest = {
+  id: string;
+  team_id: string;
+  user_id: string;
+  status: "pending" | "accepted" | "declined";
+  message: string | null;
+  created_at: string;
+  updated_at: string | null;
+  user_name: string | null;
+  email: string | null;
+};
+
 export default function TeamPage() {
   return (
     <Suspense fallback={<main className="min-h-screen bg-slate-100 p-8 text-slate-700">Loading…</main>}>
@@ -60,10 +79,14 @@ function TeamPageContent() {
   const [projectName, setProjectName] = useState("");
   const [teamKeyInput, setTeamKeyInput] = useState("");
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [activeTab, setActiveTab] = useState<"projects" | "activity">("projects");
   const [loading, setLoading] = useState(true);
   const [savingProject, setSavingProject] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [joinRequestStatus, setJoinRequestStatus] = useState<string | null>(null);
+  const [joiningTeam, setJoiningTeam] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const keys = useTeamKeyStore((state) => state.keys);
@@ -78,7 +101,12 @@ function TeamPageContent() {
       }
 
       try {
-        const teams = await apiFetch<Team[]>("/teams");
+        const [profile, teams] = await Promise.all([
+          apiFetch<CurrentUser>("/auth/me"),
+          apiFetch<Team[]>("/teams"),
+        ]);
+        setCurrentUser(profile);
+
         const nextTeam = teams.find((item) => item.id === teamId) ?? null;
         setTeam(nextTeam);
 
@@ -87,15 +115,17 @@ function TeamPageContent() {
           return;
         }
 
-        const [memberList, projectList, auditList] = await Promise.all([
+        const [memberList, projectList, auditList, requestsList] = await Promise.all([
           apiFetch<TeamMember[]>(`/teams/${teamId}/members`),
           apiFetch<Project[]>(`/teams/${teamId}/projects`),
           apiFetch<AuditEntry[]>(`/teams/${teamId}/audit`),
+          nextTeam.owner_id === profile.id ? apiFetch<JoinRequest[]>(`/teams/${teamId}/join-requests`) : Promise.resolve([]),
         ]);
 
         setMembers(memberList);
         setProjects(projectList);
         setAuditEntries(auditList);
+        setJoinRequests(requestsList);
       } catch (err) {
         console.error(err);
         setError("Unable to load team details.");
@@ -164,6 +194,43 @@ function TeamPageContent() {
     }
   };
 
+  const isOwner = !!team && !!currentUser && team.owner_id === currentUser.id;
+  const isMember = members.some((member) => member.user_id === currentUser?.id);
+
+  const handleJoinRequest = async () => {
+    setJoiningTeam(true);
+    setJoinRequestStatus(null);
+    try {
+      const result = await apiFetch<{ id: string; team_id: string; status: string; message: string | null }>(
+        `/teams/${teamId}/join-requests`,
+        { method: "POST" },
+      );
+      setJoinRequestStatus(`Join request sent. Status: ${result.status}.`);
+    } catch (err) {
+      console.error(err);
+      setJoinRequestStatus(err instanceof Error ? err.message : "Unable to send join request.");
+    } finally {
+      setJoiningTeam(false);
+    }
+  };
+
+  const handleJoinRequestDecision = async (requestId: string, action: "accept" | "decline") => {
+    try {
+      const endpoint = action === "accept" ? "accept" : "decline";
+      await apiFetch<{ status: string }>(`/teams/${teamId}/join-requests/${requestId}/${endpoint}`, {
+        method: "POST",
+      });
+      setJoinRequests((current) =>
+        current.map((request) =>
+          request.id === requestId ? { ...request, status: action === "accept" ? "accepted" : "declined" } : request,
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+      setError(action === "accept" ? "Could not accept the request." : "Could not decline the request.");
+    }
+  };
+
   if (loading) {
     return <main className="min-h-screen bg-slate-100 p-8 text-slate-700">Loading…</main>;
   }
@@ -208,6 +275,71 @@ function TeamPageContent() {
             <p className="font-medium">Invite link copied to clipboard.</p>
             <p className="mt-2 break-all font-mono text-xs">{inviteLink}</p>
           </div>
+        )}
+
+        {!isOwner && !isMember && currentUser && (
+          <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">Want to join this team?</p>
+                <p className="mt-1 text-sky-700">Send a join request to the team owner.</p>
+              </div>
+              <button
+                type="button"
+                disabled={joiningTeam}
+                onClick={handleJoinRequest}
+                className="rounded-lg bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {joiningTeam ? "Sending…" : "Request to join"}
+              </button>
+            </div>
+            {joinRequestStatus && <p className="mt-3 text-xs">{joinRequestStatus}</p>}
+          </section>
+        )}
+
+        {isOwner && joinRequests.length > 0 && (
+          <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 text-sm text-violet-900">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">Team join requests</p>
+                <p className="text-violet-700">Review requests to approve new members.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {joinRequests.map((request) => (
+                <div key={request.id} className="rounded-xl border border-violet-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-800">{request.user_name || "Unknown user"}</p>
+                      <p className="text-xs text-slate-500">{request.email || "No email"}</p>
+                      <p className="mt-2 text-xs uppercase tracking-wide text-violet-700">{request.status}</p>
+                    </div>
+                    {request.status === "pending" && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleJoinRequestDecision(request.id, "accept")}
+                          className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-500"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleJoinRequestDecision(request.id, "decline")}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Requested {new Date(request.created_at).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {!currentKey && (

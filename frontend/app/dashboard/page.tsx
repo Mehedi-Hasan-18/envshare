@@ -23,11 +23,26 @@ type Team = {
   created_at?: string;
 };
 
+type TeamJoinRequest = {
+  id: string;
+  team_id: string;
+  user_id: string;
+  status: "pending" | "accepted" | "declined";
+  message: string | null;
+  created_at: string;
+  updated_at: string | null;
+  user_name: string | null;
+  email: string | null;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamName, setTeamName] = useState("");
+  const [pendingRequests, setPendingRequests] = useState<
+    { id: string; teamId: string; teamName: string; userName: string | null; email: string | null; createdAt: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [teamKeyNotice, setTeamKeyNotice] = useState<{ teamId: string; key: string } | null>(null);
@@ -59,9 +74,30 @@ export default function DashboardPage() {
           apiFetch<CurrentUser>("/auth/me"),
           apiFetch<Team[]>("/teams"),
         ]);
+        const ownedTeams = teamList.filter((team) => team.owner_id === profile.id);
+        const requestCollections = await Promise.all(
+          ownedTeams.map(async (team) => {
+            try {
+              const requests = await apiFetch<TeamJoinRequest[]>(`/teams/${team.id}/join-requests`);
+              return requests
+                .filter((request) => request.status === "pending")
+                .map((request) => ({
+                  id: request.id,
+                  teamId: team.id,
+                  teamName: team.name,
+                  userName: request.user_name,
+                  email: request.email,
+                  createdAt: request.created_at,
+                }));
+            } catch {
+              return [];
+            }
+          }),
+        );
         if (!mounted) return;
         setUser(profile);
         setTeams(teamList);
+        setPendingRequests(requestCollections.flat());
         setLoading(false);
       } catch (e) {
         console.error("Dashboard error:", e);
@@ -188,6 +224,33 @@ export default function DashboardPage() {
             <code className="mt-4 block break-all rounded-xl bg-white/80 p-3 text-xs font-mono">
               {teamKeyNotice.key}
             </code>
+          </section>
+        )}
+
+        {pendingRequests.length > 0 && (
+          <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet-700">Notifications</p>
+                <h2 className="mt-1 text-xl font-semibold text-violet-900">Pending team join requests</h2>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {pendingRequests.map((request) => (
+                <div key={request.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-800">{request.userName || "Unknown user"}</p>
+                      <p className="text-sm text-slate-500">{request.email || "No email"}</p>
+                    </div>
+                    <Link href={`/teams/${request.teamId}`} className="text-sm font-medium text-violet-700 hover:text-violet-900">
+                      Review →
+                    </Link>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{request.teamName} • {new Date(request.createdAt).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
