@@ -51,9 +51,22 @@ app.include_router(share_router, prefix="/api")
 app.include_router(tokens_router, prefix="/api")
 
 
+@app.get("/")
+@app.get("/api")
+def api_root():
+    return {
+        "service": "EnvShare API",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+        "api_health": "/api/health",
+    }
+
+
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "EnvShare API"}
 
 
 if __name__ == "__main__":
