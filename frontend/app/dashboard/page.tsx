@@ -206,6 +206,10 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+          1. Create a team and save your team key. 2. Open the team and click Create invite. 3. Send the full link, including everything after #, to your teammate.
+        </div>
+
         {teamKeyNotice && (
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
             <div className="flex items-start justify-between gap-4">

@@ -24,6 +24,18 @@ def accept_invite(
     if invite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
 
+    team = db.query(Team).filter(Team.id == invite.team_id).first()
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    membership = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id == team.id, TeamMember.user_id == current_user.id)
+        .first()
+    )
+    if membership is not None:
+        return {"status": "accepted", "team_id": team.id, "already_member": True}
+
     if invite.used_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite has already been used")
 
@@ -35,20 +47,9 @@ def accept_invite(
     if expires_at < now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite has expired")
 
-    team = db.query(Team).filter(Team.id == invite.team_id).first()
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-
-    membership = (
-        db.query(TeamMember)
-        .filter(TeamMember.team_id == team.id, TeamMember.user_id == current_user.id)
-        .first()
-    )
-    if membership is None:
-        db.add(TeamMember(team_id=team.id, user_id=current_user.id, role="member"))
-
+    db.add(TeamMember(team_id=team.id, user_id=current_user.id, role="member"))
     invite.used_at = now
     log_audit(db, team.id, current_user.id, "member_joined", team.name)
     db.commit()
 
-    return {"status": "accepted", "team_id": team.id}
+    return {"status": "accepted", "team_id": team.id, "already_member": False}

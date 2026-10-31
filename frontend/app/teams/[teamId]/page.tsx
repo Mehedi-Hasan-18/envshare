@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../../../lib/api";
@@ -85,9 +85,9 @@ function TeamPageContent() {
   const [loading, setLoading] = useState(true);
   const [savingProject, setSavingProject] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [joinRequestStatus, setJoinRequestStatus] = useState<string | null>(null);
-  const [joiningTeam, setJoiningTeam] = useState(false);
+  const [inviteExpiresAt, setInviteExpiresAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
 
   const keys = useTeamKeyStore((state) => state.keys);
   const currentKey = useMemo(() => keys[teamId], [keys, teamId]);
@@ -186,6 +186,7 @@ function TeamPageContent() {
 
       const nextInviteLink = `${window.location.origin}/invite/${result.token}#${currentKey}`;
       setInviteLink(nextInviteLink);
+      setInviteExpiresAt(result.expires_at);
       await navigator.clipboard.writeText(nextInviteLink);
       setError(null);
     } catch (err) {
@@ -195,24 +196,6 @@ function TeamPageContent() {
   };
 
   const isOwner = !!team && !!currentUser && team.owner_id === currentUser.id;
-  const isMember = members.some((member) => member.user_id === currentUser?.id);
-
-  const handleJoinRequest = async () => {
-    setJoiningTeam(true);
-    setJoinRequestStatus(null);
-    try {
-      const result = await apiFetch<{ id: string; team_id: string; status: string; message: string | null }>(
-        `/teams/${teamId}/join-requests`,
-        { method: "POST" },
-      );
-      setJoinRequestStatus(`Join request sent. Status: ${result.status}.`);
-    } catch (err) {
-      console.error(err);
-      setJoinRequestStatus(err instanceof Error ? err.message : "Unable to send join request.");
-    } finally {
-      setJoiningTeam(false);
-    }
-  };
 
   const handleJoinRequestDecision = async (requestId: string, action: "accept" | "decline") => {
     try {
@@ -242,6 +225,10 @@ function TeamPageContent() {
   return (
     <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
       <div className="mx-auto max-w-6xl space-y-8">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+          1. Create a team and save your team key. 2. Open the team and click Create invite. 3. Send the full link, including everything after #, to your teammate.
+        </div>
+
         <div className="flex items-center justify-between gap-3">
           <div>
             <Link href="/dashboard" className="text-sm text-slate-600 hover:text-slate-900">
@@ -270,31 +257,20 @@ function TeamPageContent() {
           </div>
         </div>
 
-        {inviteLink && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-            <p className="font-medium">Invite link copied to clipboard.</p>
-            <p className="mt-2 break-all font-mono text-xs">{inviteLink}</p>
+        {searchParams?.get("inviteNotice") && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {searchParams.get("inviteNotice")}
           </div>
         )}
 
-        {!isOwner && !isMember && currentUser && (
-          <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-medium">Want to join this team?</p>
-                <p className="mt-1 text-sky-700">Send a join request to the team owner.</p>
-              </div>
-              <button
-                type="button"
-                disabled={joiningTeam}
-                onClick={handleJoinRequest}
-                className="rounded-lg bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {joiningTeam ? "Sending…" : "Request to join"}
-              </button>
-            </div>
-            {joinRequestStatus && <p className="mt-3 text-xs">{joinRequestStatus}</p>}
-          </section>
+        {inviteLink && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <p className="font-medium">Invite link copied to clipboard.</p>
+            <p className="mt-2 text-xs text-emerald-800">
+              Expires {inviteExpiresAt ? new Date(inviteExpiresAt).toLocaleString() : "soon"}. This link is single-use and must be sent in full, including the #team-key fragment.
+            </p>
+            <p className="mt-2 break-all font-mono text-xs">{inviteLink}</p>
+          </div>
         )}
 
         {isOwner && joinRequests.length > 0 && (

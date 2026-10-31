@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../../lib/api";
 import { supabase } from "../../../lib/supabase";
@@ -19,10 +20,20 @@ function InviteLandingPageContent() {
   const router = useRouter();
   const params = useParams<{ token: string }>();
   const token = params.token;
-  const [status, setStatus] = useState("Saving invite details…");
+  const acceptingRef = useRef(false);
+  const [status, setStatus] = useState(() => {
+    if (typeof window === "undefined") return "Saving invite details…";
+    const errorFromUrl = new URLSearchParams(window.location.search).get("error");
+    return errorFromUrl || "Saving invite details…";
+  });
 
   useEffect(() => {
+    if (!token) return;
+    if (acceptingRef.current) return;
+    if (new URLSearchParams(window.location.search).has("error")) return;
+
     const run = async () => {
+      acceptingRef.current = true;
       const teamKey = window.location.hash.replace(/^#/, "");
       localStorage.setItem(
         "pendingInvite",
@@ -40,17 +51,23 @@ function InviteLandingPageContent() {
       }
 
       try {
-        const result = await apiFetch<{ team_id: string }>(`/invites/${token}/accept`);
+        const result = await apiFetch<{ team_id: string }>(`/invites/${token}/accept`, { method: "POST" });
         const teamKeyStore = useTeamKeyStore.getState();
         if (teamKey) {
           teamKeyStore.setKey(result.team_id, teamKey);
+        } else {
+          const notice = encodeURIComponent("The team key was missing from the link. Paste it manually to continue.");
+          router.replace(`/teams/${result.team_id}?inviteNotice=${notice}`);
+          localStorage.removeItem("pendingInvite");
+          return;
         }
         localStorage.removeItem("pendingInvite");
         setStatus("Invite accepted. Redirecting…");
         router.replace(`/teams/${result.team_id}`);
       } catch (error) {
-        console.error(error);
-        setStatus("This invite is invalid or has expired.");
+        const message = error instanceof Error ? error.message : "Unable to process this invite. Please try again.";
+        localStorage.removeItem("pendingInvite");
+        setStatus(message);
       }
     };
 
@@ -63,6 +80,9 @@ function InviteLandingPageContent() {
         <p className="text-sm uppercase tracking-[0.2em] text-slate-500">EnvShare</p>
         <h1 className="mt-3 text-xl font-semibold text-slate-900">Invite status</h1>
         <p className="mt-3 text-sm">{status}</p>
+        <Link href="/dashboard" className="mt-4 inline-block text-sm font-medium text-slate-700 underline">
+          Back to dashboard
+        </Link>
       </div>
     </main>
   );

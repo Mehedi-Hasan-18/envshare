@@ -21,14 +21,20 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   });
 
   if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`;
+
     try {
       const errorPayload = await response.json();
-      const detail = typeof errorPayload?.detail === "string" ? errorPayload.detail : JSON.stringify(errorPayload ?? { status: response.status });
-      throw new Error(detail);
+      if (typeof errorPayload?.detail === "string") {
+        detail = errorPayload.detail;
+      } else {
+        detail = JSON.stringify(errorPayload);
+      }
     } catch {
-      const errorText = await response.text();
-      throw new Error(errorText || `Request failed with status ${response.status}`);
+      // Keep the status-based detail when the response is not valid JSON.
     }
+
+    throw new Error(detail);
   }
 
   return (await response.json()) as T;
